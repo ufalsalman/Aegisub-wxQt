@@ -23,6 +23,8 @@
 #include "video_frame.h"
 #include "video_provider_manager.h"
 
+#include "seek_profile.h"
+
 #include <libaegisub/dispatch.h>
 
 #include <boost/gil.hpp>
@@ -257,8 +259,19 @@ void AsyncVideoProvider::ProcAsync(uint_fast32_t req_version, bool check_updated
 		last_lines.push_back(*line);
 	last_rendered = frame_number;
 
+	bool profile = seek_profile::enabled();
+	auto work_start = profile ? seek_profile::stamp() : 0LL;
+
 	try {
-		auto evt = new FrameReadyEvent(ProcFrame(frame_number, time), time);
+		auto frame = ProcFrame(frame_number, time);
+		if (profile) {
+			long long done = seek_profile::stamp();
+			seek_profile::worker_render_us() = done - work_start;
+			fprintf(stderr, "[seek] worker_done frame=%d render_ms=%.1f us=%lld\n",
+				frame_number, (done - work_start) / 1000.0, done);
+			fflush(stderr);
+		}
+		auto evt = new FrameReadyEvent(std::move(frame), time);
 		evt->SetEventType(EVT_FRAME_READY);
 		parent->QueueEvent(evt);
 	}

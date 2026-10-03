@@ -40,6 +40,7 @@
 #include "selection_controller.h"
 #include "time_range.h"
 #include "async_video_provider.h"
+#include "seek_profile.h"
 #include "utils.h"
 
 #include <libaegisub/ass/time.h>
@@ -85,6 +86,12 @@ void VideoController::OnSubtitlesCommit(int type, const AssDialogue *changed) {
 
 void VideoController::OnActiveLineChanged(AssDialogue *line) {
 	if (line && provider && OPT_GET("Video/Subtitle Sync")->GetBool()) {
+		if (seek_profile::enabled()) {
+			long long us = seek_profile::stamp();
+			seek_profile::active_line_stamp() = us;
+			fprintf(stderr, "[seek] active_line row=%d us=%lld\n", line->Row, us);
+			fflush(stderr);
+		}
 		Stop();
 		JumpToTime(line->Start);
 	}

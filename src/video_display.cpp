@@ -46,6 +46,7 @@
 #include "include/aegisub/menu.h"
 #include "options.h"
 #include "project.h"
+#include "seek_profile.h"
 #include "spline_curve.h"
 #include "utils.h"
 #include "video_out_gl.h"
@@ -180,6 +181,14 @@ bool VideoDisplay::InitContext() {
 
 void VideoDisplay::UploadFrameData(FrameReadyEvent &evt) {
 	pending_frame = evt.frame;
+	if (seek_profile::enabled()) {
+		long long us = seek_profile::stamp();
+		long long dt = us - seek_profile::active_line_stamp().load();
+		long long render = seek_profile::worker_render_us().load();
+		fprintf(stderr, "[seek] frame_ready time=%.0f dt_click_ms=%.1f render_ms=%.1f us=%lld\n",
+			evt.time, dt / 1000.0, render / 1000.0, us);
+		fflush(stderr);
+	}
 	Render();
 }
 
