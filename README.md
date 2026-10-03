@@ -154,3 +154,39 @@ Some documentation for developers is available in [docs/developer_docs.md](docs/
 
 All files in this repository are licensed under various GPL-compatible BSD-style licenses; see LICENCE and the individual source files for more information.
 The official Windows and OS X builds are GPLv2 due to including fftw3.
+
+## wxQt Edition
+
+This is an unofficial fork of Aegisub that builds against [wxWidgets](https://github.com/wxWidgets/wxWidgets) using its Qt backend (`wxBUILD_TOOLKIT=qt`), so it integrates with Qt-based Linux desktops (developed on Arch Linux with KDE Plasma). Licences are unchanged from upstream.
+
+Differences from upstream:
+
+- **Theme-aware subtitle grid and edit box.** Colours follow the Qt palette (light/dark) instead of fixed defaults, and Qt palette changes are forwarded to wx as `wxEVT_SYS_COLOUR_CHANGED`, so the UI re-styles itself when the system theme changes.
+- **wxQt fix set** (maintained in the `wxQt` branch of our [wxWidgets fork](https://github.com/ufalsalman/wxWidgets), on top of wxWidgets revision `e320e82ec94df7ff5bb85b73344407190ce1d4f6`): mouse wheel events report the correct axis and rotation, GL content rendered outside of paint events is composited immediately (`wxGLCanvas::SwapBuffers`), and out-of-range `wxListBox` selections are ignored instead of dereferencing a null item (this used to abort when opening a video whose colour matrix differs from the subtitle file's, if a stale choice was saved in the configuration).
+- **Versioning:** non-tagged builds report themselves in the upstream format `<revision>-<branch>-<hash>` — the `wxQt` branch name already identifies the edition (see `tools/version.sh`).
+
+### Building on Linux
+
+The maintained build path is the *aegisub-wxqt* build kit (`build.py`), which clones this fork and our wxWidgets fork (both on the `wxQt` branch), builds wxWidgets with the Qt toolkit into a private prefix, then configures and builds this repository with Meson. Manual equivalent:
+
+1. Build wxWidgets at the pinned revision with `-DwxBUILD_TOOLKIT=qt -DwxUSE_OPENGL=ON -DwxUSE_STC=ON` plus the wxQt fix set above.
+2. `meson setup builddir` (point `wx-config` at the private prefix), then `meson compile -C builddir` and `meson install -C builddir --skip-subprojects luajit`.
+
+### Diagnostics: `AEGISUB_PROFILE_SEEK`
+
+Setting `AEGISUB_PROFILE_SEEK=1` in the environment enables end-to-end instrumentation of the video seek path: active line change → worker frame render → frame ready on the UI thread → GL paint.
+
+Why it is kept in the tree instead of being removed after debugging: the class of regression it watches — *a frame that is rendered but never becomes visible, or is delivered seconds late* — is invisible during normal use and cannot be caught by screenshots or by timing individual stages, yet this is exactly how wxQt failed in practice (video appearing to seek only every few seconds). The instrumentation costs nothing when the variable is unset (a one-time `getenv`), and its `[seek]` lines carry steady-clock microsecond stamps so entries written by the UI thread and the video worker thread can be correlated even when they interleave.
+
+Usage:
+
+```
+AEGISUB_PROFILE_SEEK=1 aegisub file.ass 2> seek.log
+```
+
+Line meanings:
+
+- `[seek] active_line row=…` — a row was activated and the video seek was requested (this is t0).
+- `[seek] worker_done frame=… render_ms=…` — the video worker finished decoding + subtitle rendering.
+- `[seek] frame_ready … dt_click_ms=…` — the frame arrived on the UI thread; `dt_click_ms` is the click → ready latency.
+- `[seek] paintGL …` — the GL content actually became visible on screen. This line is emitted by the matching probe on the wxWidgets side (its Qt GL canvas), which the same environment variable enables.
