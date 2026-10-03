@@ -48,12 +48,44 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <algorithm>
+#include <cmath>
 #include <functional>
 
 #include <wx/clipbrd.h>
 #include <wx/intl.h>
 #include <wx/menu.h>
 #include <wx/settings.h>
+
+#ifdef __WXQT__
+namespace {
+double ColourLuminance(wxColour const& colour) {
+	auto channel = [](int value) {
+		double normalized = value / 255.0;
+		return normalized <= 0.04045 ? normalized / 12.92 : std::pow((normalized + 0.055) / 1.055, 2.4);
+	};
+	return 0.2126 * channel(colour.Red()) + 0.7152 * channel(colour.Green()) + 0.0722 * channel(colour.Blue());
+}
+
+double ColourContrast(wxColour const& a, wxColour const& b) {
+	double l1 = ColourLuminance(a), l2 = ColourLuminance(b);
+	return (std::max(l1, l2) + 0.05) / (std::min(l1, l2) + 0.05);
+}
+
+wxColour LegibleColour(wxColour const& foreground, wxColour const& background) {
+	if (ColourContrast(foreground, background) >= 4.5) return foreground;
+	wxColour black(0, 0, 0), white(255, 255, 255);
+	wxColour target = ColourContrast(black, background) > ColourContrast(white, background) ? black : white;
+	for (int amount = 10; amount <= 100; amount += 10) {
+		wxColour mixed((foreground.Red() * (100 - amount) + target.Red() * amount) / 100,
+		               (foreground.Green() * (100 - amount) + target.Green() * amount) / 100,
+		               (foreground.Blue() * (100 - amount) + target.Blue() * amount) / 100);
+		if (ColourContrast(mixed, background) >= 4.5) return mixed;
+	}
+	return target;
+}
+}
+#endif
 
 // Maximum number of languages (locales)
 // It should be above 100 (at least 242) and probably not more than 1000
@@ -154,6 +186,12 @@ SubsTextEditCtrl::SubsTextEditCtrl(wxWindow* parent, wxSize wsize, long style, a
 	Subscribe("Karaoke Variable");
 
 	BindConnection(OPT_SUB("Colour/Subtitle/Background", &SubsTextEditCtrl::SetStyles, this));
+#ifdef __WXQT__
+	Bind(wxEVT_SYS_COLOUR_CHANGED, [this](wxSysColourChangedEvent &event) {
+		SetStyles();
+		event.Skip();
+	});
+#endif
 	BindConnection(OPT_SUB("Subtitle/Highlight/Syntax", &SubsTextEditCtrl::UpdateStyle, this));
 	BindConnection(OPT_SUB("App/Call Tips", &SubsTextEditCtrl::UpdateCallTip, this));
 
@@ -227,22 +265,33 @@ void SubsTextEditCtrl::OnKeyDown(wxKeyEvent &event) {
 void SubsTextEditCtrl::SetSyntaxStyle(int id, wxFont &font, std::string const& name, wxColor const& default_background) {
 	StyleSetFont(id, font);
 	StyleSetBold(id, OPT_GET("Colour/Subtitle/Syntax/Bold/" + name)->GetBool());
-	StyleSetForeground(id, to_wx(OPT_GET("Colour/Subtitle/Syntax/" + name)->GetColor()));
+	wxColour foreground = to_wx(OPT_GET("Colour/Subtitle/Syntax/" + name)->GetColor());
 	const agi::OptionValue *background = OPT_GET("Colour/Subtitle/Syntax/Background/" + name);
+	wxColour style_background = default_background;
 	if (background->GetType() == agi::OptionType::Color)
-		StyleSetBackground(id, to_wx(background->GetColor()));
-	else
-		StyleSetBackground(id, default_background);
+		style_background = to_wx(background->GetColor());
+#ifdef __WXQT__
+	if (name == "Normal") foreground = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
+	foreground = LegibleColour(foreground, style_background);
+#endif
+	StyleSetForeground(id, foreground);
+	StyleSetBackground(id, style_background);
 }
 
 void SubsTextEditCtrl::SetStyles() {
 	wxFont font = *wxNORMAL_FONT;
+#ifndef __WXQT__
+	// wxQt uses Unicode fonts and does not implement SetEncoding.
 	font.SetEncoding(wxFONTENCODING_DEFAULT); // this solves problems with some fonts not working properly
+#endif
 	wxString fontname = FontFace("Subtitle/Edit Box");
 	if (!fontname.empty()) font.SetFaceName(fontname);
 	font.SetPointSize(OPT_GET("Subtitle/Edit Box/Font Size")->GetInt());
 
 	auto default_background = to_wx(OPT_GET("Colour/Subtitle/Background")->GetColor());
+#ifdef __WXQT__
+	default_background = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+#endif
 
 	namespace ss = agi::ass::SyntaxStyle;
 	SetSyntaxStyle(ss::NORMAL, font, "Normal", default_background);
@@ -265,6 +314,11 @@ void SubsTextEditCtrl::SetStyles() {
 
 	SetCaretForeground(StyleGetForeground(ss::NORMAL));
 	StyleSetBackground(wxSTC_STYLE_DEFAULT, default_background);
+#ifdef __WXQT__
+	StyleSetForeground(wxSTC_STYLE_DEFAULT, wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT));
+	SetSelBackground(true, wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHT));
+	SetSelForeground(true, wxSystemSettings::GetColour(wxSYS_COLOUR_LISTBOXHIGHLIGHTTEXT));
+#endif
 
 	// Misspelling indicator
 	IndicatorSetStyle(0,wxSTC_INDIC_SQUIGGLE);

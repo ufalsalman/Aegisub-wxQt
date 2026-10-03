@@ -52,7 +52,18 @@
 #include <wx/dcbuffer.h>
 #include <wx/menu.h>
 #include <wx/scrolbar.h>
+#include <wx/settings.h>
 #include <wx/sizer.h>
+
+#ifdef __WXQT__
+namespace {
+wxColour MixColour(wxColour const& a, wxColour const& b, int b_percent) {
+	return wxColour((a.Red() * (100 - b_percent) + b.Red() * b_percent) / 100,
+	                (a.Green() * (100 - b_percent) + b.Green() * b_percent) / 100,
+	                (a.Blue() * (100 - b_percent) + b.Blue() * b_percent) / 100);
+}
+}
+#endif
 
 // Check menu.h for id range allocation before editing this enum
 enum {
@@ -112,6 +123,12 @@ BaseGrid::BaseGrid(wxWindow* parent, agi::Context *context)
 	});
 
 	Bind(wxEVT_CONTEXT_MENU, &BaseGrid::OnContextMenu, this);
+#ifdef __WXQT__
+	Bind(wxEVT_SYS_COLOUR_CHANGED, [this](wxSysColourChangedEvent &event) {
+		UpdateStyle();
+		event.Skip();
+	});
+#endif
 }
 
 BaseGrid::~BaseGrid() { }
@@ -183,14 +200,27 @@ void BaseGrid::UpdateStyle() {
 	// Set line height
 	lineHeight = dc.GetCharHeight() + 4;
 
-	// Set row brushes
-	row_colors.Default.SetColour(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Background")->GetColor()));
-	row_colors.Header.SetColour(to_wx(OPT_GET("Colour/Subtitle Grid/Header")->GetColor()));
-	row_colors.Selection.SetColour(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Selection")->GetColor()));
-	row_colors.Comment.SetColour(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Comment")->GetColor()));
-	row_colors.Visible.SetColour(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Inframe")->GetColor()));
-	row_colors.SelectedComment.SetColour(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Selected Comment")->GetColor()));
-	row_colors.LeftCol.SetColour(to_wx(OPT_GET("Colour/Subtitle Grid/Left Column")->GetColor()));
+	// Construct solid brushes: setting only the colour of a default wxQt
+	// brush leaves its Qt brush style as NoBrush, so backgrounds are not painted.
+	row_colors.Default = wxBrush(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Background")->GetColor()));
+	row_colors.Header = wxBrush(to_wx(OPT_GET("Colour/Subtitle Grid/Header")->GetColor()));
+	row_colors.Selection = wxBrush(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Selection")->GetColor()));
+	row_colors.Comment = wxBrush(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Comment")->GetColor()));
+	row_colors.Visible = wxBrush(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Inframe")->GetColor()));
+	row_colors.SelectedComment = wxBrush(to_wx(OPT_GET("Colour/Subtitle Grid/Background/Selected Comment")->GetColor()));
+	row_colors.LeftCol = wxBrush(to_wx(OPT_GET("Colour/Subtitle Grid/Left Column")->GetColor()));
+#ifdef __WXQT__
+	auto base = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+	auto window = wxSystemSettings::GetColour(wxSYS_COLOUR_BTNFACE);
+	auto highlight = wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHT);
+	row_colors.Default = wxBrush(base);
+	row_colors.Header = wxBrush(window);
+	row_colors.Selection = wxBrush(highlight);
+	row_colors.Comment = wxBrush(MixColour(base, window, 45));
+	row_colors.Visible = wxBrush(MixColour(base, highlight, 16));
+	row_colors.SelectedComment = wxBrush(highlight);
+	row_colors.LeftCol = wxBrush(window);
+#endif
 
 	if (width_helper)
 		width_helper->ClearCache();
@@ -311,9 +341,17 @@ void BaseGrid::OnPaint(wxPaintEvent &) {
 	wxColour text_standard(to_wx(OPT_GET("Colour/Subtitle Grid/Standard")->GetColor()));
 	wxColour text_selection(to_wx(OPT_GET("Colour/Subtitle Grid/Selection")->GetColor()));
 	wxColour text_collision(to_wx(OPT_GET("Colour/Subtitle Grid/Collision")->GetColor()));
+#ifdef __WXQT__
+	text_standard = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
+	text_selection = wxSystemSettings::GetColour(wxSYS_COLOUR_LISTBOXHIGHLIGHTTEXT);
+#endif
 
 	// First grid row
 	wxPen grid_pen(to_wx(OPT_GET("Colour/Subtitle Grid/Lines")->GetColor()));
+#ifdef __WXQT__
+	grid_pen = wxPen(MixColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW),
+	                           wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT), 24));
+#endif
 	dc.SetPen(grid_pen);
 	dc.DrawLine(0, 0, w, 0);
 	dc.SetPen(*wxTRANSPARENT_PEN);
