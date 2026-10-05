@@ -30,3 +30,5 @@ option('build_osx_bundle', type: 'boolean', value: false, description: 'Package 
 option('macos_deployment_target', type: 'string', value: '13.0', description: 'Minimum supported macOS version')
 
 option('tests', type: 'boolean', value: true, description: 'Build tests')
+
+option('appimage', type: 'boolean', value: false, description: 'Resolve data files relative to the executable (AppImage and portable builds)')

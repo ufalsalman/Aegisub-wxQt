@@ -74,10 +74,17 @@ void Path::FillPlatformSpecificPaths() {
 	SetToken("?local", home/".aegisub");
 
 #ifdef APPIMAGE_BUILD
+	// Relocatable installs (AppImage, portable tarballs, a /usr prefix):
+	// data always lives at <binary dir>/../share/aegisub.
 	agi::fs::path data = exe_dir();
 	if (data == "") data = home/".aegisub";
+	data = agi::fs::path((data/".."/"share"/"aegisub").lexically_normal().string());
 	SetToken("?data", data);
-	SetToken("?dictionary", Decode("?data/dictionaries"));
+
+	agi::fs::path dictionaries = data/"dictionaries";
+	SetToken("?dictionary", agi::fs::Exists(dictionaries)
+		? dictionaries
+		: agi::fs::path("/usr/share/hunspell"));
 #else
 	SetToken("?data", P_DATA);
 	SetToken("?dictionary", "/usr/share/hunspell");

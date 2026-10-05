@@ -21,6 +21,12 @@ fs = import('fs')
 force_fallback_for = get_option('force_fallback_for')
 force_all_fallbacks = get_option('wrap_mode') == 'forcefallback'
 
+if get_option('appimage')
+    # Relocatable install: libaegisub/unix/path.cpp resolves data files
+    # relative to the executable instead of the build prefix.
+    add_project_arguments('-DAPPIMAGE_BUILD', language: 'cpp')
+endif
+
 if host_machine.system() == 'darwin'
     macos_deployment_target = get_option('macos_deployment_target')
     if macos_deployment_target == ''
