@@ -74,6 +74,12 @@
 #include <wx/stopwatch.h>
 #include <wx/utils.h>
 
+#ifdef __WXQT__
+#include <QImage>
+#include <QLabel>
+#include <QWidget>
+#endif
+
 namespace config {
 	agi::Options *opt = nullptr;
 	agi::MRUManager *mru = nullptr;
@@ -159,14 +165,45 @@ void ShowSplashScreen() {
 	wxGUIEventLoop loop;
 	wxEventLoopActivator activator(&loop);
 
-	// The splash closes itself after the timeout (or on user input)
+#ifdef __WXQT__
+	// Qt-native splash: pure Qt translucency (WA_TranslucentBackground) works
+	// on this stack, while a wx top-level currently renders opaque
+	auto splash = new QWidget(nullptr, Qt::SplashScreen | Qt::WindowStaysOnTopHint);
+	splash->setAttribute(Qt::WA_TranslucentBackground);
+	auto label = new QLabel(splash);
+
+	// wxImage -> QImage carrying the alpha channel
+	QImage qimg(image.GetWidth(), image.GetHeight(), QImage::Format_RGBA8888);
+	{
+		const unsigned char *rgb = image.GetData();
+		const unsigned char *alpha = image.GetAlpha();
+		for (int i = 0, n = image.GetWidth() * image.GetHeight(); i < n; ++i) {
+			qimg.bits()[i * 4 + 0] = rgb[i * 3 + 0];
+			qimg.bits()[i * 4 + 1] = rgb[i * 3 + 1];
+			qimg.bits()[i * 4 + 2] = rgb[i * 3 + 2];
+			qimg.bits()[i * 4 + 3] = alpha ? alpha[i] : 0xff;
+		}
+	}
+	label->setPixmap(QPixmap::fromImage(qimg));
+	label->setGeometry(0, 0, image.GetWidth(), image.GetHeight());
+	splash->setGeometry((screen.GetWidth() - image.GetWidth()) / 2,
+	                    (screen.GetHeight() - image.GetHeight()) / 2,
+	                    image.GetWidth(), image.GetHeight());
+	splash->show();
+#else
 	auto splash = new wxSplashScreen(wxBitmap(image),
 		wxSPLASH_CENTRE_ON_SCREEN | wxSPLASH_TIMEOUT, 5000,
 		nullptr, wxID_ANY);
+#endif
 
 	wxStopWatch sw;
 	while (sw.Time() < 5300)
 		loop.DispatchTimeout(50);
+
+#ifdef __WXQT__
+	splash->close();
+	splash->deleteLater();
+#endif
 }
 }
 

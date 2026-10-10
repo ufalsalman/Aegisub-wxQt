@@ -329,6 +329,12 @@ endif
 deps += dependency('icu-uc', version: '>=4.8.1.1')
 deps += dependency('icu-i18n', version: '>=4.8.1.1')
 
+# The wxQt splash screen is a Qt widget and needs Qt on the link line
+qt_dep = dependency('qt6', modules: ['Widgets'], required: false)
+if qt_dep.found()
+    deps += qt_dep
+endif
+
 check_deps = [
     # audio, in order of precedence
     ['libpulse', [], 'PulseAudio', [], []],
