@@ -67,8 +67,11 @@
 
 #include <boost/interprocess/streams/bufferstream.hpp>
 #include <wx/clipbrd.h>
+#include <wx/evtloop.h>
 #include <wx/msgdlg.h>
+#include <wx/splash.h>
 #include <wx/stackwalk.h>
+#include <wx/stopwatch.h>
 #include <wx/utils.h>
 
 namespace config {
@@ -120,6 +123,51 @@ AegisubApp::AegisubApp() {
 
 namespace {
 wxDEFINE_EVENT(EVT_CALL_THUNK, ValueEvent<agi::dispatch::Thunk>);
+
+/// Show the splash image centered on the screen for a few seconds while the
+/// rest of the application starts up. The image is taken from the first of
+/// ~/.config/aegisub-wxqt/splash.png and <data dir>/default.png that exists;
+/// missing or unloadable images are skipped silently.
+void ShowSplashScreen() {
+	agi::fs::path splash_path;
+	if (const char *home = getenv("HOME")) {
+		agi::fs::path user_path = agi::fs::path(home) / ".config/aegisub-wxqt/splash.png";
+		if (agi::fs::FileExists(user_path))
+			splash_path = user_path;
+	}
+	if (splash_path.empty()) {
+		agi::fs::path data_path = config::path->Decode("?data/default.png");
+		if (agi::fs::FileExists(data_path))
+			splash_path = data_path;
+	}
+	if (splash_path.empty()) return;
+
+	wxImage image(to_wx(splash_path.string()), wxBITMAP_TYPE_PNG);
+	if (!image.IsOk()) return;
+
+	// Keep oversized images within 90% of the screen, preserving the aspect
+	wxSize screen = wxGetDisplaySize();
+	int max_w = screen.GetWidth() * 9 / 10;
+	int max_h = screen.GetHeight() * 9 / 10;
+	if (image.GetWidth() > max_w || image.GetHeight() > max_h) {
+		double scale = std::min(double(max_w) / image.GetWidth(), double(max_h) / image.GetHeight());
+		image.Rescale(int(image.GetWidth() * scale), int(image.GetHeight() * scale), wxIMAGE_QUALITY_HIGH);
+	}
+
+	// OnInit runs before the main event loop exists, so pump a local one;
+	// without it the splash would only appear once startup has finished
+	wxGUIEventLoop loop;
+	wxEventLoopActivator activator(&loop);
+
+	// The splash closes itself after the timeout (or on user input)
+	auto splash = new wxSplashScreen(wxBitmap(image),
+		wxSPLASH_CENTRE_ON_SCREEN | wxSPLASH_TIMEOUT, 5000,
+		nullptr, wxID_ANY);
+
+	wxStopWatch sw;
+	while (sw.Time() < 5300)
+		loop.DispatchTimeout(50);
+}
 }
 
 /// Message displayed when an exception has occurred.
@@ -282,6 +330,10 @@ bool AegisubApp::OnInit() {
 
 		StartupLog("Install PNG handler");
 		wxImage::AddHandler(new wxPNGHandler);
+
+		// Splash screen
+		StartupLog("Show splash screen");
+		ShowSplashScreen();
 
 		// Open main frame
 		StartupLog("Create main window");

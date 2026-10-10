@@ -588,3 +588,5 @@ aegisub = executable('aegisub', aegisub_src, version_h, libresrc_headers, aegisu
                      install_dir: bindir,
                      dependencies: deps,
                      win_subsystem: 'windows')
+
+install_data('src/bitmaps/misc/default.png', install_dir: dataroot)
